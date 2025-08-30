@@ -1,4 +1,8 @@
 #include "web_server.h"
+#include <ESP8266HTTPUpdateServer.h>
+#include <Updater.h>
+
+ESP8266HTTPUpdateServer httpUpdater;
 
 WebServer::WebServer(WiFiManager* wm, TimerManager* tm, TimeManager* timeM) : server(WEB_SERVER_PORT) {
     wifiManager = wm;
@@ -7,6 +11,9 @@ WebServer::WebServer(WiFiManager* wm, TimerManager* tm, TimeManager* timeM) : se
 }
 
 void WebServer::begin() {
+    // 设置最大上传文件大小为 2MB
+    server.setContentLength(2 * 1024 * 1024);
+    
     setupRoutes();
     server.begin();
     Serial.println("Web 服务器启动，端口: " + String(WEB_SERVER_PORT));
@@ -32,6 +39,36 @@ void WebServer::setupRoutes() {
     server.on("/api/wifi", HTTP_POST, [this]() { handleWiFiConfig(); });
     server.on("/api/wifi/reset", HTTP_POST, [this]() { handleWiFiReset(); });
     server.on("/api/restart-ap", HTTP_POST, [this]() { handleRestartAP(); });
+    
+    // 固件更新测试端点
+    server.on("/api/firmware/info", HTTP_GET, [this]() {
+        enableCORS();
+        JsonDocument doc;
+        doc["version"] = "1.0.0";
+        doc["buildTime"] = __DATE__ " " __TIME__;
+        doc["chipId"] = String(ESP.getChipId(), HEX);
+        doc["flashSize"] = ESP.getFlashChipSize();
+        doc["freeSpace"] = ESP.getFreeSketchSpace();
+        sendJSON(doc);
+    });
+    
+    server.on("/api/firmware/update", HTTP_POST, 
+        [this]() { 
+            // 处理上传完成后的响应
+            enableCORS();
+            if (Update.hasError()) {
+                sendJSON(500, "固件更新失败", false);
+            } else {
+                sendJSON(200, "固件更新成功，设备即将重启");
+                delay(1000);
+                ESP.restart();
+            }
+        },
+        [this]() { 
+            // 处理文件上传过程
+            handleFirmwareUpdate(); 
+        }
+    );
     
     // 404 处理 - 这里会处理动态路由
     server.onNotFound([this]() {
@@ -68,7 +105,7 @@ void WebServer::handleRoot() {
 void WebServer::handleGetStatus() {
     enableCORS();
     
-    DynamicJsonDocument doc(1024);
+    JsonDocument doc;
     doc["wifiConnected"] = wifiManager->isConnected();
     doc["localIP"] = wifiManager->getLocalIP();
     doc["apIP"] = wifiManager->getAPIP();
@@ -95,7 +132,7 @@ void WebServer::handleGetStatus() {
 void WebServer::handleGetSystemInfo() {
     enableCORS();
     
-    DynamicJsonDocument doc(2048);
+    JsonDocument doc;
     
     // 基本系统信息
     doc["chipId"] = String(ESP.getChipId(), HEX);
@@ -121,48 +158,52 @@ void WebServer::handleGetSystemInfo() {
     doc["uptimeMinutes"] = (uptime / (60 * 1000UL)) % 60;
     doc["uptimeSeconds"] = (uptime / 1000UL) % 60;
     
-    // WiFi 详细信息
-    JsonObject wifi = doc.createNestedObject("wifi");
+        // WiFi 信息
+    JsonObject wifi = doc["wifi"].to<JsonObject>();
+    wifi["connected"] = wifiManager->isConnected();
+    wifi["localIP"] = wifiManager->getLocalIP();
+    wifi["macAddress"] = WiFi.macAddress();
+    wifi["apIP"] = wifiManager->getAPIP();
+    wifi["isAPMode"] = wifiManager->isInAPMode();
+    
+    // WiFi状态信息
     wifi["status"] = WiFi.status();
-    wifi["statusText"] = wifiManager->isConnected() ? "已连接" : (wifiManager->isInAPMode() ? "AP模式" : "断开连接");
-    wifi["mode"] = WiFi.getMode();
-    wifi["modeText"] = WiFi.getMode() == WIFI_STA ? "STA" : (WiFi.getMode() == WIFI_AP ? "AP" : "AP+STA");
-    
     if (wifiManager->isConnected()) {
-        wifi["ssid"] = WiFi.SSID();
-        wifi["bssid"] = WiFi.BSSIDstr();
+        wifi["statusText"] = "已连接";
+        wifi["modeText"] = "Station模式";
         wifi["rssi"] = WiFi.RSSI();
-        wifi["localIP"] = WiFi.localIP().toString();
-        wifi["subnetMask"] = WiFi.subnetMask().toString();
-        wifi["gatewayIP"] = WiFi.gatewayIP().toString();
-        wifi["dnsIP"] = WiFi.dnsIP().toString();
-        wifi["macAddress"] = WiFi.macAddress();
-        wifi["channel"] = WiFi.channel();
-        wifi["autoConnect"] = WiFi.getAutoConnect();
-    }
-    
-    if (wifiManager->isInAPMode()) {
-        wifi["apSSID"] = WiFi.softAPSSID();
-        wifi["apIP"] = WiFi.softAPIP().toString();
-        wifi["apMacAddress"] = WiFi.softAPmacAddress();
+        wifi["ssid"] = WiFi.SSID();
+    } else if (wifiManager->isInAPMode()) {
+        wifi["statusText"] = "AP模式";
+        wifi["modeText"] = "热点模式";
+        wifi["rssi"] = 0;
+        wifi["ssid"] = "未连接";
+        wifi["apSSID"] = DEFAULT_AP_SSID;
         wifi["apStationCount"] = WiFi.softAPgetStationNum();
+    } else {
+        wifi["statusText"] = "未连接";
+        wifi["modeText"] = "未知";
+        wifi["rssi"] = 0;
+        wifi["ssid"] = "未连接";
     }
     
     // 时间信息
-    JsonObject timeInfo = doc.createNestedObject("time");
-    timeInfo["hasValidTime"] = timeManager->isTimeValid();
-    timeInfo["timeSource"] = timeManager->isTimeValid() ? "NTP" : "系统运行时间";
+    JsonObject timeInfo = doc["time"].to<JsonObject>();
     timeInfo["currentTime"] = timeManager->getCurrentTimeString();
     timeInfo["currentDate"] = timeManager->getCurrentDateString();
-    timeInfo["isWiFiTimeAvailable"] = timeManager->isWiFiTimeAvailable();
+    timeInfo["hasValidTime"] = timeManager->isTimeValid();
+    timeInfo["isValid"] = timeManager->isTimeValid();
+    timeInfo["timeSource"] = timeManager->isTimeValid() ? "NTP网络时间" : "系统运行时间";
+    timeInfo["ntpEnabled"] = wifiManager->isConnected();
+    timeInfo["uptime"] = millis() / 1000; // 运行时间（秒）
     
     // 引脚状态
-    JsonArray pins = doc.createNestedArray("pins");
+    JsonArray pins = doc["pins"].to<JsonArray>();
     for (int i = 0; i < AVAILABLE_PINS_COUNT; i++) {
-        JsonObject pin = pins.createNestedObject();
-        pin["pin"] = AVAILABLE_PINS[i];
+        JsonObject pin = pins.add<JsonObject>();
+        pin["pin"] = AVAILABLE_PINS[i];      // 前端期望的字段名
+        pin["number"] = AVAILABLE_PINS[i];   // 保持兼容
         pin["state"] = digitalRead(AVAILABLE_PINS[i]);
-        
         // 检查是否被定时器占用
         bool inUse = false;
         int timerIndex = -1;
@@ -179,7 +220,7 @@ void WebServer::handleGetSystemInfo() {
     }
     
     // 定时器统计
-    JsonObject timerStats = doc.createNestedObject("timerStats");
+    JsonObject timerStats = doc["timerStats"].to<JsonObject>();
     timerStats["total"] = timerManager->getTimerCount();
     
     int enabled = 0, active = 0, repeatDaily = 0, oneTime = 0;
@@ -198,12 +239,12 @@ void WebServer::handleGetSystemInfo() {
     timerStats["maxTimers"] = MAX_TIMERS;
     
     // EEPROM 使用情况
-    JsonObject eeprom = doc.createNestedObject("eeprom");
+    JsonObject eeprom = doc["eeprom"].to<JsonObject>();
     eeprom["size"] = EEPROM_SIZE;
     eeprom["wifiConfigStart"] = WIFI_SSID_ADDR;
     eeprom["wifiConfigSize"] = TIMER_CONFIG_ADDR - WIFI_SSID_ADDR;
     eeprom["timerConfigStart"] = TIMER_CONFIG_ADDR;
-    eeprom["timerConfigUsed"] = 1 + (timerManager->getTimerCount() * 7); // 1 byte count + 7 bytes per timer
+    eeprom["timerConfigUsed"] = 1 + (timerManager->getTimerCount() * 25); // 1 byte count + 25 bytes per timer (12 config + 13 runtime)
     
     sendJSON(doc);
 }
@@ -221,13 +262,13 @@ void WebServer::handleAddTimer() {
         return;
     }
     
-    DynamicJsonDocument doc(1024);
+    JsonDocument doc;
     deserializeJson(doc, server.arg("plain"));
     
     int pin = doc["pin"];
     int hour = doc["hour"];
     int minute = doc["minute"];
-    int duration = doc["duration"];
+    float duration = doc["duration"];
     bool repeatDaily = doc["repeatDaily"].as<bool>();
     bool isPWM = doc["isPWM"].as<bool>();
     int pwmValue = doc["pwmValue"].is<int>() ? doc["pwmValue"].as<int>() : 512; // 默认值50%
@@ -256,13 +297,13 @@ void WebServer::handleUpdateTimer() {
         return;
     }
     
-    DynamicJsonDocument doc(1024);
+    JsonDocument doc;
     deserializeJson(doc, server.arg("plain"));
     
     int pin = doc["pin"];
     int hour = doc["hour"];
     int minute = doc["minute"];
-    int duration = doc["duration"];
+    float duration = doc["duration"];
     bool enabled = doc["enabled"];
     bool repeatDaily = doc["repeatDaily"].as<bool>();
     bool isPWM = doc["isPWM"].as<bool>();
@@ -314,11 +355,11 @@ void WebServer::handleManualControl() {
         return;
     }
     
-    DynamicJsonDocument doc(512);
+    JsonDocument doc;
     deserializeJson(doc, server.arg("plain"));
     
     int pin = doc["pin"];
-    int duration = doc["duration"];
+    float duration = doc["duration"];
     bool isPWM = doc["isPWM"].as<bool>();
     int pwmValue = doc["pwmValue"].is<int>() ? doc["pwmValue"].as<int>() : 512; // 默认值50%
     
@@ -334,7 +375,7 @@ void WebServer::handleWiFiConfig() {
         return;
     }
     
-    DynamicJsonDocument doc(512);
+    JsonDocument doc;
     deserializeJson(doc, server.arg("plain"));
     
     String ssid = doc["ssid"];
@@ -382,7 +423,7 @@ void WebServer::handleRestartAP() {
 }
 
 void WebServer::sendJSON(int code, const String& message, bool success) {
-    DynamicJsonDocument doc(512);
+    JsonDocument doc;
     doc["success"] = success;
     doc["message"] = message;
     
@@ -392,7 +433,7 @@ void WebServer::sendJSON(int code, const String& message, bool success) {
     server.send(code, "application/json", response);
 }
 
-void WebServer::sendJSON(DynamicJsonDocument& doc) {
+void WebServer::sendJSON(JsonDocument& doc) {
     String response;
     serializeJson(doc, response);
     server.send(200, "application/json", response);
@@ -411,7 +452,7 @@ void WebServer::enableCORS() {
 void WebServer::handleGetPWMConfig() {
     enableCORS();
     
-    DynamicJsonDocument doc(512);
+    JsonDocument doc;
     doc["frequency"] = PWM_FREQUENCY;
     doc["resolution"] = PWM_RESOLUTION;
     doc["maxValue"] = PWM_MAX_VALUE;
@@ -419,4 +460,48 @@ void WebServer::handleGetPWMConfig() {
     doc["defaultValue"] = PWM_MAX_VALUE / 2; // 50%
     
     sendJSON(doc);
+}
+
+void WebServer::handleFirmwareUpdate() {
+    HTTPUpload& upload = server.upload();
+    
+    if (upload.status == UPLOAD_FILE_START) {
+        Serial.printf("固件更新开始: %s\n", upload.filename.c_str());
+        
+        // 检查文件扩展名
+        if (!upload.filename.endsWith(".bin")) {
+            Serial.println("错误：不支持的文件格式");
+            return;
+        }
+        
+        // 开始OTA更新
+        uint32_t maxSketchSpace = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
+        if (!Update.begin(maxSketchSpace)) {
+            Serial.println("错误：无法开始固件更新");
+            Update.printError(Serial);
+            return;
+        }
+        Serial.println("固件更新已开始...");
+    }
+    else if (upload.status == UPLOAD_FILE_WRITE) {
+        // 写入固件数据
+        Serial.printf("写入 %u 字节...\n", upload.currentSize);
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+            Serial.println("错误：固件写入失败");
+            Update.printError(Serial);
+        }
+    }
+    else if (upload.status == UPLOAD_FILE_END) {
+        // 完成固件更新
+        if (Update.end(true)) {
+            Serial.printf("固件更新成功: %u 字节\n", upload.totalSize);
+        } else {
+            Serial.println("错误：固件更新完成失败");
+            Update.printError(Serial);
+        }
+    }
+    else if (upload.status == UPLOAD_FILE_ABORTED) {
+        Update.end();
+        Serial.println("固件更新被中止");
+    }
 }

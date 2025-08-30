@@ -40,7 +40,7 @@ struct TimerConfig
     int pin;
     int hour;
     int minute;
-    int duration;                 // 持续时间（秒）
+    float duration;               // 持续时间（秒，支持小数）
     bool repeatDaily;             // 每天重复
     bool isActive;                // 当前是否激活
     unsigned long startTime;      // 开始时间（millis时间戳）

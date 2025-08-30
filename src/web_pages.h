@@ -371,6 +371,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                         <button class="tab" onclick="switchTab('manual', this)">手动控制</button>
                         <button class="tab" onclick="switchTab('system', this)">系统状态</button>
                         <button class="tab" onclick="switchTab('wifi', this)">WiFi设置</button>
+                        <button class="tab" onclick="switchTab('firmware', this)">固件更新</button>
                     </nav>
                 </div>
 
@@ -397,7 +398,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                                         </div>
                                         <div>
                                             <label for="timer-duration" class="block text-sm font-medium text-gray-700 mb-1">持续时间 (秒)</label>
-                                            <input type="number" id="timer-duration" min="1" max="86400" value="60" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                                            <input type="number" id="timer-duration" max="86400" value="0.3" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
                                         </div>
                                         <div class="flex items-center">
                                             <input type="checkbox" id="timer-repeat" checked class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
@@ -460,7 +461,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                                     </div>
                                     <div>
                                         <label for="manual-duration" class="block text-sm font-medium text-gray-700 mb-1">持续时间 (0=切换)</label>
-                                        <input type="number" id="manual-duration" min="0" max="86400" value="0" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                                        <input type="number" id="manual-duration"  max="86400" value="0" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
                                     </div>
                                     <div>
                                         <label class="flex items-center space-x-2">
@@ -564,6 +565,65 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                                     <button class="w-full bg-amber-500 text-white font-semibold py-2 px-4 rounded-md hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 transition-colors" onclick="restartAP()">
                                         🔄 重启为热点
                                     </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 固件更新 -->
+                    <div id="firmware-content" class="tab-content hidden fade-in">
+                        <div class="max-w-md mx-auto p-5 border rounded-lg bg-gray-50">
+                            <h3 class="text-lg font-semibold mb-4 text-gray-800">🔧 固件更新</h3>
+                            <div id="firmware-message" class="hidden mb-4"></div>
+                            
+                            <div class="space-y-4">
+                                <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                    <h4 class="font-medium text-blue-800 mb-2">当前固件信息</h4>
+                                    <div class="text-sm text-blue-700">
+                                        <div>版本: <span id="current-version">加载中...</span></div>
+                                        <div>编译时间: <span id="build-time">加载中...</span></div>
+                                        <div>芯片ID: <span id="firmware-chip-id">加载中...</span></div>
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <label for="firmware-file" class="block text-sm font-medium text-gray-700 mb-2">
+                                        📁 选择固件文件 (.bin)
+                                    </label>
+                                    <input type="file" id="firmware-file" accept=".bin" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                                    <div class="mt-2 text-xs text-gray-500">
+                                        支持的文件格式: .bin (最大 2MB)
+                                    </div>
+                                </div>
+                                
+                                <div class="p-3 text-xs text-yellow-800 rounded-lg bg-yellow-50 border border-yellow-200">
+                                    ⚠️ 警告：固件更新可能需要 2-5 分钟，期间请勿断电或关闭浏览器。更新完成后设备将自动重启。
+                                </div>
+                                
+                                <div class="space-y-2">
+                                    <button id="upload-btn" class="w-full bg-red-600 text-white font-semibold py-3 px-4 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" onclick="startFirmwareUpdate()" disabled>
+                                        🚀 开始固件更新
+                                    </button>
+                                    
+                                    <div id="upload-progress" class="hidden">
+                                        <div class="w-full bg-gray-200 rounded-full h-3">
+                                            <div id="progress-bar" class="bg-blue-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                                        </div>
+                                        <div class="text-sm text-gray-600 text-center mt-2">
+                                            <span id="progress-text">准备中...</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="border-t pt-4">
+                                    <h4 class="font-medium text-gray-800 mb-2">更新说明</h4>
+                                    <ul class="text-sm text-gray-600 space-y-1">
+                                        <li>• 确保设备连接稳定的电源</li>
+                                        <li>• 选择正确的固件文件(.bin格式)</li>
+                                        <li>• 更新过程中请勿断电</li>
+                                        <li>• 更新完成后设备会自动重启</li>
+                                        <li>• 如遇问题可重启设备恢复</li>
+                                    </ul>
                                 </div>
                             </div>
                         </div>
@@ -839,7 +899,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                     pin: parseInt(pin), 
                     hour, 
                     minute, 
-                    duration: parseInt(duration), 
+                    duration: parseFloat(duration), 
                     repeatDaily,
                     isPWM: isPWM,
                     pwmValue: parseInt(pwmValue)
@@ -916,7 +976,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             try {
                 const body = { 
                     pin: parseInt(pin), 
-                    duration: parseInt(duration) || 0,
+                    duration: parseFloat(duration) || 0,
                     isPWM: isPWM,
                     pwmValue: parseInt(pwmValue)
                 };
@@ -1028,6 +1088,163 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         function updateTimerPWMPercentage(value) {
             const percentage = Math.round((value / 1023) * 100);
             document.getElementById('timer-pwm-percentage').textContent = percentage + '%';
+        }
+
+        // 固件更新相关函数
+        document.addEventListener('DOMContentLoaded', function() {
+            const fileInput = document.getElementById('firmware-file');
+            const uploadBtn = document.getElementById('upload-btn');
+            
+            if (fileInput && uploadBtn) {
+                fileInput.addEventListener('change', function() {
+                    const file = this.files[0];
+                    if (file) {
+                        if (file.size > 2 * 1024 * 1024) { // 2MB限制
+                            showMessage('firmware-message', '文件大小不能超过 2MB', 'error');
+                            this.value = '';
+                            uploadBtn.disabled = true;
+                            return;
+                        }
+                        if (!file.name.toLowerCase().endsWith('.bin')) {
+                            showMessage('firmware-message', '请选择 .bin 格式的固件文件', 'error');
+                            this.value = '';
+                            uploadBtn.disabled = true;
+                            return;
+                        }
+                        uploadBtn.disabled = false;
+                        showMessage('firmware-message', `已选择文件: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`, 'info');
+                    } else {
+                        uploadBtn.disabled = true;
+                    }
+                });
+            }
+            
+            // 加载当前固件信息
+            loadFirmwareInfo();
+        });
+
+        async function loadFirmwareInfo() {
+            try {
+                const response = await fetch('/api/system');
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('current-version').textContent = `v1.0.0`;
+                    document.getElementById('build-time').textContent = new Date().toLocaleDateString();
+                    document.getElementById('firmware-chip-id').textContent = data.chipId || '未知';
+                }
+            } catch (error) {
+                console.error('加载固件信息失败:', error);
+            }
+        }
+
+        async function startFirmwareUpdate() {
+            const fileInput = document.getElementById('firmware-file');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showMessage('firmware-message', '请先选择固件文件', 'error');
+                return;
+            }
+            
+            if (!confirm('确定要更新固件吗？更新过程中请勿断电，设备将自动重启。')) {
+                return;
+            }
+            
+            const uploadBtn = document.getElementById('upload-btn');
+            const progressDiv = document.getElementById('upload-progress');
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+            
+            // 禁用上传按钮并显示进度条
+            uploadBtn.disabled = true;
+            progressDiv.classList.remove('hidden');
+            progressBar.style.width = '0%';
+            progressText.textContent = '正在上传固件...';
+            
+            const formData = new FormData();
+            formData.append('firmware', file);
+            
+            console.log('开始上传固件文件:', file.name, file.size, 'bytes');
+            
+            try {
+                const xhr = new XMLHttpRequest();
+                
+                // 监听上传进度
+                xhr.upload.onprogress = function(e) {
+                    if (e.lengthComputable) {
+                        const percentComplete = Math.round((e.loaded / e.total) * 100);
+                        progressBar.style.width = percentComplete + '%';
+                        progressText.textContent = `上传中... ${percentComplete}%`;
+                    }
+                };
+                
+                // 监听状态变化
+                xhr.onreadystatechange = function() {
+                    if (xhr.readyState === XMLHttpRequest.DONE) {
+                        if (xhr.status === 200) {
+                            progressBar.style.width = '100%';
+                            progressText.textContent = '上传完成，正在刷写固件...';
+                            showMessage('firmware-message', '固件上传成功，正在更新...请等待设备重启', 'success');
+                            
+                            // 模拟刷写进度
+                            setTimeout(() => {
+                                progressText.textContent = '固件更新中，请稍候...';
+                            }, 1000);
+                            
+                            setTimeout(() => {
+                                progressText.textContent = '更新完成，设备即将重启...';
+                                showMessage('firmware-message', '固件更新完成！设备将在几秒钟后重启', 'success');
+                            }, 3000);
+                            
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 8000);
+                        } else {
+                            console.error('上传失败，状态码:', xhr.status);
+                            let errorMessage = '未知错误';
+                            try {
+                                const response = JSON.parse(xhr.responseText);
+                                errorMessage = response.message || errorMessage;
+                            } catch (e) {
+                                errorMessage = `服务器错误 (${xhr.status})`;
+                            }
+                            showMessage('firmware-message', `更新失败: ${errorMessage}`, 'error');
+                            resetUploadUI();
+                        }
+                    }
+                };
+                
+                xhr.onerror = function() {
+                    console.error('网络错误或请求失败');
+                    showMessage('firmware-message', '上传失败，请检查网络连接', 'error');
+                    resetUploadUI();
+                };
+                
+                xhr.onabort = function() {
+                    console.error('上传被中止');
+                    showMessage('firmware-message', '上传被中止', 'error');
+                    resetUploadUI();
+                };
+                
+                xhr.open('POST', '/api/firmware/update', true);
+                console.log('发送固件上传请求到:', '/api/firmware/update');
+                xhr.send(formData);
+                
+            } catch (error) {
+                console.error('固件更新失败:', error);
+                showMessage('firmware-message', '更新失败: ' + error.message, 'error');
+                resetUploadUI();
+            }
+        }
+
+        function resetUploadUI() {
+            const uploadBtn = document.getElementById('upload-btn');
+            const progressDiv = document.getElementById('upload-progress');
+            const fileInput = document.getElementById('firmware-file');
+            
+            uploadBtn.disabled = false;
+            progressDiv.classList.add('hidden');
+            fileInput.value = '';
         }
 
         function showMessage(elementId, message, type) {

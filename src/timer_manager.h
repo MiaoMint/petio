@@ -19,9 +19,9 @@ public:
     TimerManager();
     void begin(TimeManager* tm);
     void update();
-    bool addTimer(int pin, int hour, int minute, int duration, bool repeatDaily = false, bool isPWM = false, int pwmValue = 512);
+    bool addTimer(int pin, int hour, int minute, float duration, bool repeatDaily = false, bool isPWM = false, int pwmValue = 512);
     bool removeTimer(int index);
-    bool updateTimer(int index, int pin, int hour, int minute, int duration, bool enabled, bool repeatDaily = false, bool isPWM = false, int pwmValue = 512);
+    bool updateTimer(int index, int pin, int hour, int minute, float duration, bool enabled, bool repeatDaily = false, bool isPWM = false, int pwmValue = 512);
     String getTimersJSON();
     void saveTimers();
     void saveTimerStates(); // 新增：仅保存运行时状态
@@ -31,7 +31,7 @@ public:
     TimerConfig getTimer(int index);
     void setPin(int pin, bool state, int pwmValue = 0);
     String getAvailablePinsJSON();
-    void executeManualControl(int pin, int duration, bool isPWM = false, int pwmValue = 512);
+    void executeManualControl(int pin, float duration, bool isPWM = false, int pwmValue = 512);
     bool hasValidTime();
 };
 

@@ -41,10 +41,11 @@ private:
     void handleWiFiConfig();
     void handleWiFiReset();
     void handleRestartAP();
+    void handleFirmwareUpdate();
     
     // 工具函数
     void sendJSON(int code, const String& message, bool success = true);
-    void sendJSON(DynamicJsonDocument& doc);
+    void sendJSON(JsonDocument& doc);
     void enableCORS();
 };
 

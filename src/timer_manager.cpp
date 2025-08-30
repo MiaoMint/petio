@@ -94,7 +94,7 @@ void TimerManager::update() {
         
         // 检查是否需要关闭
         if (timers[i].isActive && 
-            currentTime - timers[i].startTime >= (unsigned long)(timers[i].duration * 1000)) {
+            currentTime - timers[i].startTime >= (unsigned long)(timers[i].duration * 1000.0)) {
             
             timers[i].isActive = false;
             timers[i].realStartTime = 0; // 清理真实时间戳
@@ -112,7 +112,7 @@ void TimerManager::update() {
     }
 }
 
-bool TimerManager::addTimer(int pin, int hour, int minute, int duration, bool repeatDaily, bool isPWM, int pwmValue) {
+bool TimerManager::addTimer(int pin, int hour, int minute, float duration, bool repeatDaily, bool isPWM, int pwmValue) {
     if (timerCount >= MAX_TIMERS) {
         return false;
     }
@@ -128,7 +128,7 @@ bool TimerManager::addTimer(int pin, int hour, int minute, int duration, bool re
     if (!pinValid) return false;
     
     // 验证时间
-    if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || duration <= 0) {
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || duration <= 0.0) {
         return false;
     }
     
@@ -183,7 +183,7 @@ bool TimerManager::removeTimer(int index) {
     return true;
 }
 
-bool TimerManager::updateTimer(int index, int pin, int hour, int minute, int duration, bool enabled, bool repeatDaily, bool isPWM, int pwmValue) {
+bool TimerManager::updateTimer(int index, int pin, int hour, int minute, float duration, bool enabled, bool repeatDaily, bool isPWM, int pwmValue) {
     if (index < 0 || index >= timerCount) {
         return false;
     }
@@ -199,7 +199,7 @@ bool TimerManager::updateTimer(int index, int pin, int hour, int minute, int dur
     if (!pinValid) return false;
     
     // 验证时间
-    if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || duration <= 0) {
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || duration <= 0.0) {
         return false;
     }
     
@@ -234,11 +234,11 @@ bool TimerManager::updateTimer(int index, int pin, int hour, int minute, int dur
 }
 
 String TimerManager::getTimersJSON() {
-    DynamicJsonDocument doc(2048);
+    JsonDocument doc;
     JsonArray array = doc.to<JsonArray>();
     
     for (int i = 0; i < timerCount; i++) {
-        JsonObject timer = array.createNestedObject();
+        JsonObject timer = array.add<JsonObject>();
         timer["index"] = i;
         timer["enabled"] = timers[i].enabled;
         timer["pin"] = timers[i].pin;
@@ -257,11 +257,11 @@ String TimerManager::getTimersJSON() {
 }
 
 String TimerManager::getAvailablePinsJSON() {
-    DynamicJsonDocument doc(1024);
+    JsonDocument doc;
     JsonArray array = doc.to<JsonArray>();
     
     for (int i = 0; i < AVAILABLE_PINS_COUNT; i++) {
-        JsonObject pin = array.createNestedObject();
+        JsonObject pin = array.add<JsonObject>();
         pin["pin"] = AVAILABLE_PINS[i];
         pin["state"] = digitalRead(AVAILABLE_PINS[i]);
         
@@ -281,7 +281,7 @@ String TimerManager::getAvailablePinsJSON() {
     return result;
 }
 
-void TimerManager::executeManualControl(int pin, int duration, bool isPWM, int pwmValue) {
+void TimerManager::executeManualControl(int pin, float duration, bool isPWM, int pwmValue) {
     // 验证引脚
     bool pinValid = false;
     for (int i = 0; i < AVAILABLE_PINS_COUNT; i++) {
@@ -297,14 +297,14 @@ void TimerManager::executeManualControl(int pin, int duration, bool isPWM, int p
         return;
     }
     
-    if (duration > 0) {
+    if (duration > 0.0) {
         // 开启引脚指定时间
         setPin(pin, HIGH, isPWM ? pwmValue : 0);
         String modeStr = isPWM ? " PWM模式, 值=" + String(pwmValue) : " 数字模式";
         Serial.println("手动控制：引脚 " + String(pin) + " 开启 " + String(duration) + " 秒" + modeStr);
         
         // 这里应该使用定时器来关闭，简化处理
-        delay(duration * 1000);
+        delay((unsigned long)(duration * 1000.0));
         setPin(pin, LOW, 0);
         Serial.println("手动控制：引脚 " + String(pin) + " 关闭");
     } else {
@@ -339,8 +339,18 @@ void TimerManager::saveTimers() {
         EEPROM.write(addr++, timers[i].pin);
         EEPROM.write(addr++, timers[i].hour);
         EEPROM.write(addr++, timers[i].minute);
-        EEPROM.write(addr++, (timers[i].duration >> 8) & 0xFF);
-        EEPROM.write(addr++, timers[i].duration & 0xFF);
+        
+        // 保存float类型的duration（4字节）
+        union {
+            float f;
+            uint8_t bytes[4];
+        } durationConverter;
+        durationConverter.f = timers[i].duration;
+        EEPROM.write(addr++, durationConverter.bytes[0]);
+        EEPROM.write(addr++, durationConverter.bytes[1]);
+        EEPROM.write(addr++, durationConverter.bytes[2]);
+        EEPROM.write(addr++, durationConverter.bytes[3]);
+        
         EEPROM.write(addr++, timers[i].repeatDaily ? 1 : 0);
         EEPROM.write(addr++, timers[i].isPWM ? 1 : 0);
         EEPROM.write(addr++, (timers[i].pwmValue >> 8) & 0xFF);
@@ -387,13 +397,22 @@ void TimerManager::loadTimers() {
         timers[i].pin = EEPROM.read(addr++);
         timers[i].hour = EEPROM.read(addr++);
         timers[i].minute = EEPROM.read(addr++);
-        int durationHigh = EEPROM.read(addr++);
-        int durationLow = EEPROM.read(addr++);
-        timers[i].duration = (durationHigh << 8) | durationLow;
+        
+        // 读取float类型的duration（4字节）
+        union {
+            float f;
+            uint8_t bytes[4];
+        } durationConverter;
+        durationConverter.bytes[0] = EEPROM.read(addr++);
+        durationConverter.bytes[1] = EEPROM.read(addr++);
+        durationConverter.bytes[2] = EEPROM.read(addr++);
+        durationConverter.bytes[3] = EEPROM.read(addr++);
+        timers[i].duration = durationConverter.f;
+        
         timers[i].repeatDaily = EEPROM.read(addr++) == 1;
         
         // 检查是否有PWM数据（向后兼容）
-        if (addr < EEPROM_SIZE - 16) { // 增加了13个字节的运行时状态数据（9+4）
+        if (addr < EEPROM_SIZE - 20) { // 更新了字节数计算：duration现在是4字节而不是2字节
             timers[i].isPWM = EEPROM.read(addr++) == 1;
             int pwmHigh = EEPROM.read(addr++);
             int pwmLow = EEPROM.read(addr++);
@@ -455,7 +474,7 @@ void TimerManager::loadTimers() {
                 unsigned long elapsedTime = currentTime - timers[i].startTime;
                 
                 // 检查定时器是否已经超时
-                if (elapsedTime >= (unsigned long)(timers[i].duration * 1000)) {
+                if (elapsedTime >= (unsigned long)(timers[i].duration * 1000.0)) {
                     // 定时器已经超时，关闭它
                     timers[i].isActive = false;
                     timers[i].realStartTime = 0;
@@ -465,7 +484,7 @@ void TimerManager::loadTimers() {
                     // 定时器仍然有效，恢复引脚状态
                     setPin(timers[i].pin, HIGH, timers[i].isPWM ? timers[i].pwmValue : 0);
                     String modeStr = timers[i].isPWM ? " PWM(" + String(timers[i].pwmValue) + ")" : "";
-                    unsigned long remainingTime = (timers[i].duration * 1000) - elapsedTime;
+                    unsigned long remainingTime = (unsigned long)(timers[i].duration * 1000.0) - elapsedTime;
                     Serial.println("恢复定时器 " + String(i) + " 状态，引脚 " + String(timers[i].pin) + " 开启" + modeStr + 
                                   "，剩余时间: " + String(remainingTime / 1000) + "秒");
                 }
@@ -492,8 +511,8 @@ void TimerManager::saveTimerStates() {
     int addr = TIMER_CONFIG_ADDR + 1; // 跳过定时器数量
     
     for (int i = 0; i < timerCount; i++) {
-        // 跳过基本配置部分 (10字节)
-        addr += 10;
+        // 跳过基本配置部分 (12字节: enabled(1) + pin(1) + hour(1) + minute(1) + duration(4) + repeatDaily(1) + isPWM(1) + pwmValue(2))
+        addr += 12;
         
         // 更新运行时状态部分 (13字节)
         EEPROM.write(addr++, timers[i].isActive ? 1 : 0);
@@ -545,7 +564,7 @@ TimerConfig TimerManager::getTimer(int index) {
         return timers[index];
     }
     
-    TimerConfig empty = {false, 0, 0, 0, 0, false, false, 0, 0UL, false, 0, 0UL};
+    TimerConfig empty = {false, 0, 0, 0, 0.0, false, false, 0, 0UL, false, 0, 0UL};
     return empty;
 }
 
