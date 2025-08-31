@@ -17,7 +17,7 @@ WebServer webServer(&wifiManager, &timerManager, &timeManager);
 unsigned long lastUpdate = 0;
 unsigned long lastWiFiCheck = 0;
 unsigned long lastTimeUpdate = 0;
-const unsigned long UPDATE_INTERVAL = 1000;       // 1秒
+const unsigned long UPDATE_INTERVAL = 10;         // 10毫秒 - 高精度定时器更新
 const unsigned long WIFI_CHECK_INTERVAL = 30000;  // 30秒
 const unsigned long TIME_UPDATE_INTERVAL = 10000; // 10秒
 
@@ -100,21 +100,21 @@ void loop()
 {
   unsigned long currentTime = millis();
 
-  // 处理 Web 请求
+  // 处理 Web 请求 (优先级最高)
   webServer.handleClient();
+
+  // 高频更新定时器 (10ms间隔，确保定时器精度)
+  if (currentTime - lastUpdate >= UPDATE_INTERVAL)
+  {
+    timerManager.update();
+    lastUpdate = currentTime;
+  }
 
   // 定期更新时间同步
   if (currentTime - lastTimeUpdate >= TIME_UPDATE_INTERVAL)
   {
     timeManager.update();
     lastTimeUpdate = currentTime;
-  }
-
-  // 定期更新定时器
-  if (currentTime - lastUpdate >= UPDATE_INTERVAL)
-  {
-    timerManager.update();
-    lastUpdate = currentTime;
   }
 
   // 定期检查 WiFi 连接

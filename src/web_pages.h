@@ -640,6 +640,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             systemInfo: null
         };
 
+        let isLoadingData = false;
+
         // --- Class definitions for styling ---
         const activeTabClasses = ['active', 'text-indigo-600', 'font-semibold'];
         const inactiveTabClasses = ['text-gray-500', 'hover:text-gray-700'];
@@ -653,9 +655,33 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                     tab.classList.add(...inactiveTabClasses);
                 }
             });
+            
+            // Set current time as default for timer
+            setCurrentTimeAsDefault();
+            
             loadData();
-            setInterval(loadData, 5000);
+            // 使用异步轮询替代 setInterval
+            startPolling();
         });
+
+        function setCurrentTimeAsDefault() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const currentTime = `${hours}:${minutes}`;
+            document.getElementById('timer-time').value = currentTime;
+        }
+
+        function startPolling() {
+            async function poll() {
+                if (!isLoadingData) {
+                    await loadData();
+                }
+                // 等待5秒后再次轮询
+                setTimeout(poll, 5000);
+            }
+            poll();
+        }
 
         function switchTab(tabName, clickedTab) {
             document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
@@ -674,6 +700,11 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         }
 
         async function loadData() {
+            if (isLoadingData) {
+                return; // 如果正在加载，直接返回
+            }
+            
+            isLoadingData = true;
             try {
                 const [statusRes, timersRes, pinsRes] = await Promise.all([
                     fetch('/api/status'),
@@ -698,6 +729,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             } catch (error) {
                 console.error('加载数据失败:', error);
                 document.getElementById('connection-status').innerHTML = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full bg-red-100 text-red-800">加载失败</span>`;
+            } finally {
+                isLoadingData = false;
             }
         }
 
@@ -1128,8 +1161,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                 const response = await fetch('/api/system');
                 if (response.ok) {
                     const data = await response.json();
-                    document.getElementById('current-version').textContent = `v1.0.0`;
-                    document.getElementById('build-time').textContent = new Date().toLocaleDateString();
+                    document.getElementById('current-version').textContent = data.firmwareVersion || 'v1.0.0';
+                    document.getElementById('build-time').textContent = data.buildDateTime || '未知';
                     document.getElementById('firmware-chip-id').textContent = data.chipId || '未知';
                 }
             } catch (error) {

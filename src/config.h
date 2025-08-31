@@ -1,6 +1,12 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+// 固件版本信息
+#define FIRMWARE_VERSION "v2.1.0"
+#define BUILD_DATE __DATE__
+#define BUILD_TIME __TIME__
+#define FIRMWARE_NAME "PetIO"
+
 // WiFi 配置
 #define DEFAULT_AP_SSID "PetIO_Setup"
 #define WIFI_TIMEOUT 30000 // 30秒

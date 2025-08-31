@@ -81,7 +81,8 @@ void TimerManager::update() {
             
             String modeStr = timers[i].isPWM ? " PWM(" + String(timers[i].pwmValue) + ")" : "";
             Serial.println("定时器 " + String(i) + " 激活，引脚 " + String(timers[i].pin) + " 开启" + modeStr +
-                          (timers[i].repeatDaily ? " (每天重复)" : " (单次)"));
+                          (timers[i].repeatDaily ? " (每天重复)" : " (单次)") + 
+                          ", 预期运行时间: " + String(timers[i].duration * 1000.0) + "ms");
             
             stateChanged = true;
             
@@ -94,13 +95,13 @@ void TimerManager::update() {
         
         // 检查是否需要关闭
         if (timers[i].isActive && 
-            currentTime - timers[i].startTime >= (unsigned long)(timers[i].duration * 1000.0)) {
+            currentTime - timers[i].startTime >= (unsigned long)(timers[i].duration * 1000.0 + 0.5)) {
             
             timers[i].isActive = false;
             timers[i].realStartTime = 0; // 清理真实时间戳
             setPin(timers[i].pin, LOW, 0);
             
-            Serial.println("定时器 " + String(i) + " 完成，引脚 " + String(timers[i].pin) + " 关闭");
+            Serial.println("定时器 " + String(i) + " 完成，引脚 " + String(timers[i].pin) + " 关闭，实际运行时间: " + String(currentTime - timers[i].startTime) + "ms");
             stateChanged = true;
         }
     }

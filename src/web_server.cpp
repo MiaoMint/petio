@@ -1,4 +1,5 @@
 #include "web_server.h"
+#include "config.h"
 #include <ESP8266HTTPUpdateServer.h>
 #include <Updater.h>
 
@@ -133,6 +134,13 @@ void WebServer::handleGetSystemInfo() {
     enableCORS();
     
     JsonDocument doc;
+    
+    // 固件信息
+    doc["firmwareVersion"] = FIRMWARE_VERSION;
+    doc["firmwareName"] = FIRMWARE_NAME;
+    doc["buildDate"] = BUILD_DATE;
+    doc["buildTime"] = BUILD_TIME;
+    doc["buildDateTime"] = String(BUILD_DATE) + " " + String(BUILD_TIME);
     
     // 基本系统信息
     doc["chipId"] = String(ESP.getChipId(), HEX);
