@@ -434,7 +434,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                             </div>
                             <div id="timer-list-container" class="lg:col-span-2">
                                 <h3 class="text-lg font-semibold mb-4 text-gray-800">现有定时器</h3>
-                                <div class="timer-list space-y-3 max-h-[500px] overflow-y-auto pr-2" id="timer-list">
+                                <div class="timer-list space-y-3 h-full overflow-y-auto pr-2" id="timer-list">
                                     <div class="loading-placeholder text-center p-10 text-gray-500">加载中...</div>
                                 </div>
                             </div>
@@ -633,6 +633,66 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         </main>
     </div>
 
+    <!-- 编辑定时器模态弹窗 -->
+    <div id="edit-timer-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4 max-h-screen overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-gray-800">✏️ 编辑定时器</h3>
+                <button onclick="closeEditModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div id="edit-timer-message" class="hidden mb-4"></div>
+            <div class="space-y-4">
+                <div>
+                    <label for="edit-timer-pin" class="block text-sm font-medium text-gray-700 mb-1">选择引脚</label>
+                    <select id="edit-timer-pin" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"></select>
+                </div>
+                <div>
+                    <label for="edit-timer-time" class="block text-sm font-medium text-gray-700 mb-1">执行时间</label>
+                    <input type="time" id="edit-timer-time" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div>
+                    <label for="edit-timer-duration" class="block text-sm font-medium text-gray-700 mb-1">持续时间 (秒)</label>
+                    <input type="number" id="edit-timer-duration" max="86400" value="0.3" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div class="flex items-center">
+                    <input type="checkbox" id="edit-timer-repeat" checked class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                    <label for="edit-timer-repeat" class="ml-2 block text-sm text-gray-900">每天重复执行</label>
+                </div>
+                <div>
+                    <label class="flex items-center space-x-2">
+                        <input type="checkbox" id="edit-timer-pwm-mode" onchange="toggleEditTimerPWMMode()" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                        <span class="text-sm font-medium text-gray-700">PWM 模式</span>
+                    </label>
+                </div>
+                <div id="edit-timer-pwm-controls" class="hidden">
+                    <label for="edit-timer-pwm-value" class="block text-sm font-medium text-gray-700 mb-1">PWM 强度: <span id="edit-timer-pwm-percentage">50%</span></label>
+                    <input type="range" id="edit-timer-pwm-value" min="0" max="1023" value="512" 
+                           oninput="updateEditTimerPWMPercentage(this.value)" 
+                           class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                    <div class="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>0%</span>
+                        <span>25%</span>
+                        <span>50%</span>
+                        <span>75%</span>
+                        <span>100%</span>
+                    </div>
+                </div>
+                <div class="flex space-x-3 pt-4">
+                    <button class="flex-1 bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors" onclick="saveTimerEdit()">
+                        💾 保存修改
+                    </button>
+                    <button class="flex-1 bg-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors" onclick="closeEditModal()">
+                        ❌ 取消
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         let currentData = {
             timers: [],
@@ -786,8 +846,16 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                         <div class="flex items-center font-semibold ${statusColor}">${statusText}</div>
                     </div>
                     <div class="flex space-x-2 mt-3 sm:mt-0 sm:ml-4 flex-shrink-0">
-                        <button class="text-xs font-semibold py-1 px-3 rounded-md transition-colors ${timer.enabled ? 'bg-amber-100 text-amber-800 hover:bg-amber-200' : 'bg-green-100 text-green-800 hover:bg-green-200'}" onclick="toggleTimer(${index})">${timer.enabled ? '禁用' : '启用'}</button>
-                        <button class="text-xs font-semibold py-1 px-3 rounded-md bg-red-100 text-red-800 hover:bg-red-200 transition-colors" onclick="deleteTimer(${index})">删除</button>
+                        <div class="relative">
+                            <button id="timer-menu-${index}" class="text-xs font-semibold py-1 px-3 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors" onclick="toggleTimerMenu(${index})">
+                                ⚙️ 操作
+                            </button>
+                            <div id="timer-dropdown-${index}" class="absolute right-0 mt-1 w-32 bg-white rounded-md shadow-lg border border-gray-200 z-10 hidden">
+                                <button class="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${timer.enabled ? 'text-amber-800' : 'text-green-800'}" onclick="toggleTimer(${index}); hideTimerMenu(${index})">${timer.enabled ? '🚫 禁用' : '✅ 启用'}</button>
+                                <button class="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 text-blue-800" onclick="editTimer(${index}); hideTimerMenu(${index})">✏️ 修改</button>
+                                <button class="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 text-red-800" onclick="deleteTimer(${index}); hideTimerMenu(${index})">🗑️ 删除</button>
+                            </div>
+                        </div>
                     </div>
                 </div>`;
             }).join('');
@@ -1278,6 +1346,132 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             uploadBtn.disabled = false;
             progressDiv.classList.add('hidden');
             fileInput.value = '';
+        }
+
+        let currentEditingTimerIndex = -1;
+
+        // 定时器菜单控制函数
+        function toggleTimerMenu(index) {
+            // 关闭其他菜单
+            document.querySelectorAll('[id^="timer-dropdown-"]').forEach(dropdown => {
+                if (dropdown.id !== `timer-dropdown-${index}`) {
+                    dropdown.classList.add('hidden');
+                }
+            });
+            
+            const dropdown = document.getElementById(`timer-dropdown-${index}`);
+            dropdown.classList.toggle('hidden');
+        }
+
+        function hideTimerMenu(index) {
+            document.getElementById(`timer-dropdown-${index}`).classList.add('hidden');
+        }
+
+        // 点击页面其他地方关闭菜单
+        document.addEventListener('click', function(event) {
+            if (!event.target.closest('[id^="timer-menu-"]')) {
+                document.querySelectorAll('[id^="timer-dropdown-"]').forEach(dropdown => {
+                    dropdown.classList.add('hidden');
+                });
+            }
+        });
+
+        // 编辑定时器功能
+        function editTimer(index) {
+            currentEditingTimerIndex = index;
+            const timer = currentData.timers[index];
+            
+            // 填充表单数据
+            updateEditPinSelect();
+            document.getElementById('edit-timer-pin').value = timer.pin;
+            document.getElementById('edit-timer-time').value = `${timer.hour.toString().padStart(2, '0')}:${timer.minute.toString().padStart(2, '0')}`;
+            document.getElementById('edit-timer-duration').value = timer.duration;
+            document.getElementById('edit-timer-repeat').checked = timer.repeatDaily;
+            document.getElementById('edit-timer-pwm-mode').checked = timer.isPWM || false;
+            document.getElementById('edit-timer-pwm-value').value = timer.pwmValue || 512;
+            
+            // 更新PWM显示
+            toggleEditTimerPWMMode();
+            updateEditTimerPWMPercentage(timer.pwmValue || 512);
+            
+            // 显示模态弹窗
+            document.getElementById('edit-timer-modal').classList.remove('hidden');
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-timer-modal').classList.add('hidden');
+            currentEditingTimerIndex = -1;
+            document.getElementById('edit-timer-message').classList.add('hidden');
+        }
+
+        function updateEditPinSelect() {
+            const select = document.getElementById('edit-timer-pin');
+            select.innerHTML = '<option value="">选择引脚</option>' +
+                currentData.pins.map(pin => `<option value="${pin.pin}">引脚 ${pin.pin}</option>`).join('');
+        }
+
+        async function saveTimerEdit() {
+            if (currentEditingTimerIndex === -1) return;
+            
+            const pin = document.getElementById('edit-timer-pin').value;
+            const timeValue = document.getElementById('edit-timer-time').value;
+            const duration = document.getElementById('edit-timer-duration').value;
+            const repeatDaily = document.getElementById('edit-timer-repeat').checked;
+            const isPWM = document.getElementById('edit-timer-pwm-mode').checked;
+            const pwmValue = document.getElementById('edit-timer-pwm-value').value;
+            
+            if (!pin || !timeValue || !duration) {
+                showMessage('edit-timer-message', '请填写完整信息', 'error');
+                return;
+            }
+            
+            const [hour, minute] = timeValue.split(':').map(Number);
+            
+            try {
+                const body = { 
+                    pin: parseInt(pin), 
+                    hour, 
+                    minute, 
+                    duration: parseFloat(duration), 
+                    repeatDaily,
+                    isPWM: isPWM,
+                    pwmValue: parseInt(pwmValue)
+                };
+                
+                const response = await fetch(`/api/timers/${currentEditingTimerIndex}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body)
+                });
+                const result = await response.json();
+                if (result.success) {
+                    showMessage('edit-timer-message', '定时器修改成功！', 'success');
+                    setTimeout(() => {
+                        closeEditModal();
+                        loadData();
+                    }, 1000);
+                } else {
+                    showMessage('edit-timer-message', result.message || '修改失败', 'error');
+                }
+            } catch (error) {
+                showMessage('edit-timer-message', '请求失败', 'error');
+            }
+        }
+
+        function toggleEditTimerPWMMode() {
+            const pwmControls = document.getElementById('edit-timer-pwm-controls');
+            const isPWMMode = document.getElementById('edit-timer-pwm-mode').checked;
+            
+            if (isPWMMode) {
+                pwmControls.classList.remove('hidden');
+            } else {
+                pwmControls.classList.add('hidden');
+            }
+        }
+
+        function updateEditTimerPWMPercentage(value) {
+            const percentage = Math.round((value / 1023) * 100);
+            document.getElementById('edit-timer-pwm-percentage').textContent = percentage + '%';
         }
 
         function showMessage(elementId, message, type) {

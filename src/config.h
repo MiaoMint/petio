@@ -2,7 +2,7 @@
 #define CONFIG_H
 
 // 固件版本信息
-#define FIRMWARE_VERSION "v2.1.0"
+#define FIRMWARE_VERSION "v2.2.0"
 #define BUILD_DATE __DATE__
 #define BUILD_TIME __TIME__
 #define FIRMWARE_NAME "PetIO"
